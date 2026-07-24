@@ -12,6 +12,7 @@ use std::{
 struct ScrcpyProcess {
     child: Child,
     log_path: PathBuf,
+    serial: String,
 }
 
 #[derive(Default)]
@@ -40,6 +41,22 @@ struct LaunchSettings {
     bitrate_mbps: u32,
     turn_screen_off: bool,
     stay_awake: bool,
+    keyboard_mode: String,
+    mouse_mode: String,
+    gamepad_mode: String,
+    show_touches: bool,
+    fullscreen: bool,
+    always_on_top: bool,
+    borderless: bool,
+    audio_enabled: bool,
+    audio_source: String,
+    audio_codec: String,
+    audio_bitrate_kbps: u32,
+    audio_dup: bool,
+    record_enabled: bool,
+    record_path: String,
+    record_format: String,
+    no_playback: bool,
 }
 
 #[derive(Serialize)]
@@ -150,6 +167,88 @@ fn attribute<'a>(tokens: &'a [&str], name: &str) -> Option<&'a str> {
     tokens.iter().find_map(|token| token.strip_prefix(name))
 }
 
+fn validate_choice(label: &str, value: &str, choices: &[&str]) -> Result<(), String> {
+    if choices.contains(&value) {
+        Ok(())
+    } else {
+        Err(format!("不支持的{label}：{value}"))
+    }
+}
+
+#[cfg(windows)]
+fn request_window_close(process_id: u32) -> bool {
+    use windows::core::BOOL;
+    use windows::Win32::{
+        Foundation::{HWND, LPARAM, WPARAM},
+        UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, PostMessageW, WM_CLOSE},
+    };
+
+    struct CloseContext {
+        process_id: u32,
+        posted: bool,
+    }
+
+    unsafe extern "system" fn callback(window: HWND, parameter: LPARAM) -> BOOL {
+        let context = unsafe { &mut *(parameter.0 as *mut CloseContext) };
+        let mut window_process_id = 0;
+        unsafe { GetWindowThreadProcessId(window, Some(&mut window_process_id)) };
+        if window_process_id == context.process_id
+            && unsafe { PostMessageW(Some(window), WM_CLOSE, WPARAM(0), LPARAM(0)) }.is_ok()
+        {
+            context.posted = true;
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+
+    let mut context = CloseContext {
+        process_id,
+        posted: false,
+    };
+    let _ = unsafe {
+        EnumWindows(
+            Some(callback),
+            LPARAM((&mut context as *mut CloseContext) as isize),
+        )
+    };
+    context.posted
+}
+
+#[cfg(not(windows))]
+fn request_window_close(_process_id: u32) -> bool {
+    false
+}
+
+fn wait_for_exit(child: &mut Child, timeout: Duration) -> Result<bool, String> {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Ok(true);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Ok(false)
+}
+
+fn stop_device_server(serial: &str) {
+    let _ = Command::new(adb_path())
+        .args([
+            "-s",
+            serial,
+            "shell",
+            "pkill",
+            "-f",
+            "com.genymobile.scrcpy.Server",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 #[tauri::command]
 fn list_devices() -> Result<Vec<DeviceInfo>, String> {
     let output = run_adb(&["devices", "-l"])?;
@@ -223,6 +322,33 @@ fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> 
         }
     }
 
+    validate_choice("视频编码", &settings.video_codec, &["h264", "h265", "av1"])?;
+    validate_choice(
+        "键盘模式",
+        &settings.keyboard_mode,
+        &["disabled", "sdk", "uhid", "aoa"],
+    )?;
+    validate_choice(
+        "鼠标模式",
+        &settings.mouse_mode,
+        &["disabled", "sdk", "uhid", "aoa"],
+    )?;
+    validate_choice(
+        "手柄模式",
+        &settings.gamepad_mode,
+        &["disabled", "uhid", "aoa"],
+    )?;
+    validate_choice(
+        "音频源",
+        &settings.audio_source,
+        &["output", "playback", "mic"],
+    )?;
+    validate_choice("音频编码", &settings.audio_codec, &["opus", "aac", "flac"])?;
+    validate_choice("录制格式", &settings.record_format, &["mp4", "mkv"])?;
+    if settings.record_enabled && settings.record_path.trim().is_empty() {
+        return Err("录制文件路径不能为空".to_string());
+    }
+
     let executable = scrcpy_path();
     if executable.components().count() > 1 && !Path::new(&executable).exists() {
         return Err(format!("未找到 scrcpy：{}", executable.display()));
@@ -241,6 +367,9 @@ fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> 
         .arg(format!("--max-fps={}", settings.max_fps))
         .arg(format!("--video-codec={}", settings.video_codec))
         .arg(format!("--video-bit-rate={}M", settings.bitrate_mbps))
+        .arg(format!("--keyboard={}", settings.keyboard_mode))
+        .arg(format!("--mouse={}", settings.mouse_mode))
+        .arg(format!("--gamepad={}", settings.gamepad_mode))
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
@@ -254,6 +383,39 @@ fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> 
     if settings.stay_awake {
         command.arg("--stay-awake");
     }
+    if settings.show_touches {
+        command.arg("--show-touches");
+    }
+    if settings.fullscreen {
+        command.arg("--fullscreen");
+    }
+    if settings.always_on_top {
+        command.arg("--always-on-top");
+    }
+    if settings.borderless {
+        command.arg("--window-borderless");
+    }
+    if settings.audio_enabled {
+        command
+            .arg(format!("--audio-source={}", settings.audio_source))
+            .arg(format!("--audio-codec={}", settings.audio_codec));
+        if settings.audio_codec != "flac" {
+            command.arg(format!("--audio-bit-rate={}K", settings.audio_bitrate_kbps));
+        }
+        if settings.audio_dup && settings.audio_source == "playback" {
+            command.arg("--audio-dup");
+        }
+    } else {
+        command.arg("--no-audio");
+    }
+    if settings.record_enabled {
+        command
+            .arg(format!("--record={}", settings.record_path.trim()))
+            .arg(format!("--record-format={}", settings.record_format));
+        if settings.no_playback {
+            command.arg("--no-playback");
+        }
+    }
     configure_scrcpy_environment(&mut command)?;
 
     let mut child = command
@@ -264,7 +426,11 @@ fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> 
         return Err(exit_message(status, &log_path));
     }
 
-    *process = Some(ScrcpyProcess { child, log_path });
+    *process = Some(ScrcpyProcess {
+        child,
+        log_path,
+        serial: settings.serial,
+    });
     Ok(())
 }
 
@@ -272,11 +438,17 @@ fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> 
 fn stop_scrcpy(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut process = state.scrcpy.lock().map_err(|_| "无法访问投屏进程状态")?;
     if let Some(mut managed) = process.take() {
-        managed
-            .child
-            .kill()
-            .map_err(|error| format!("无法停止 scrcpy：{error}"))?;
-        let _ = managed.child.wait();
+        let window_close_requested = request_window_close(managed.child.id());
+        if !window_close_requested || !wait_for_exit(&mut managed.child, Duration::from_secs(1))? {
+            stop_device_server(&managed.serial);
+        }
+        if !wait_for_exit(&mut managed.child, Duration::from_secs(3))? {
+            managed
+                .child
+                .kill()
+                .map_err(|error| format!("无法停止 scrcpy：{error}"))?;
+            let _ = managed.child.wait();
+        }
     }
     Ok(())
 }

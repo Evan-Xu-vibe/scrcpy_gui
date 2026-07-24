@@ -36,6 +36,22 @@ interface LaunchSettings {
   bitrateMbps: number;
   turnScreenOff: boolean;
   stayAwake: boolean;
+  keyboardMode: string;
+  mouseMode: string;
+  gamepadMode: string;
+  showTouches: boolean;
+  fullscreen: boolean;
+  alwaysOnTop: boolean;
+  borderless: boolean;
+  audioEnabled: boolean;
+  audioSource: string;
+  audioCodec: string;
+  audioBitrateKbps: number;
+  audioDup: boolean;
+  recordEnabled: boolean;
+  recordPath: string;
+  recordFormat: string;
+  noPlayback: boolean;
 }
 
 interface ScrcpyProcessStatus {
@@ -45,6 +61,40 @@ interface ScrcpyProcessStatus {
 
 const tabs = ["画面", "控制", "音频", "录制"];
 const isTauri = "__TAURI_INTERNALS__" in window;
+const settingsStorageKey = "scrcpy-gui.settings.v1";
+const defaultSettings: Omit<LaunchSettings, "serial"> = {
+  maxSize: 1920,
+  maxFps: 60,
+  videoCodec: "h264",
+  bitrateMbps: 8,
+  turnScreenOff: true,
+  stayAwake: true,
+  keyboardMode: "sdk",
+  mouseMode: "sdk",
+  gamepadMode: "disabled",
+  showTouches: false,
+  fullscreen: false,
+  alwaysOnTop: false,
+  borderless: false,
+  audioEnabled: true,
+  audioSource: "output",
+  audioCodec: "opus",
+  audioBitrateKbps: 128,
+  audioDup: false,
+  recordEnabled: false,
+  recordPath: "scrcpy-recording.mp4",
+  recordFormat: "mp4",
+  noPlayback: false,
+};
+
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem(settingsStorageKey);
+    return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
+  } catch {
+    return defaultSettings;
+  }
+}
 
 function stateLabel(state: DeviceState) {
   if (state === "device") return "已连接";
@@ -59,18 +109,11 @@ function App() {
   const [activeTab, setActiveTab] = useState("画面");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(() => localStorage.getItem("scrcpy-gui.theme") === "dark");
   const [notice, setNotice] = useState("正在检查 ADB 设备…");
   const [wirelessOpen, setWirelessOpen] = useState(false);
   const [wirelessAddress, setWirelessAddress] = useState("");
-  const [settings, setSettings] = useState<Omit<LaunchSettings, "serial">>({
-    maxSize: 1920,
-    maxFps: 60,
-    videoCodec: "h264",
-    bitrateMbps: 8,
-    turnScreenOff: true,
-    stayAwake: true,
-  });
+  const [settings, setSettings] = useState<Omit<LaunchSettings, "serial">>(loadSettings);
 
   const selected = useMemo(
     () => devices.find((device) => device.serial === selectedSerial) ?? devices[0],
@@ -113,6 +156,14 @@ function App() {
     return () => window.clearInterval(statusTimer);
   }, [refreshDevices]);
 
+  useEffect(() => {
+    localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+  }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem("scrcpy-gui.theme", dark ? "dark" : "light");
+  }, [dark]);
+
   async function toggleScrcpy() {
     if (!selected || selected.state !== "device") return;
     try {
@@ -121,6 +172,11 @@ function App() {
         setRunning(false);
         setNotice("投屏已停止");
       } else {
+        if (settings.recordEnabled && !settings.recordPath.trim()) {
+          setActiveTab("录制");
+          setNotice("请先填写录制文件路径");
+          return;
+        }
         await invoke("start_scrcpy", {
           settings: { ...settings, serial: selected.serial },
         });
@@ -270,11 +326,67 @@ function App() {
                 <Toggle label="保持唤醒" description="连接期间防止设备自动休眠" checked={settings.stayAwake} onChange={(value) => setSettings({ ...settings, stayAwake: value })} />
               </div>
             </section>
+          ) : activeTab === "控制" ? (
+            <section className="settings-pane">
+              <SettingRow label="键盘模式" description="SDK 兼容性最佳，UHID 模拟物理键盘">
+                <SelectControl value={settings.keyboardMode} onChange={(value) => setSettings({ ...settings, keyboardMode: value })} options={[["sdk", "SDK"], ["uhid", "UHID"], ["disabled", "禁用"]]} />
+              </SettingRow>
+              <SettingRow label="鼠标模式" description="选择鼠标事件注入方式">
+                <SelectControl value={settings.mouseMode} onChange={(value) => setSettings({ ...settings, mouseMode: value })} options={[["sdk", "SDK"], ["uhid", "UHID"], ["disabled", "禁用"]]} />
+              </SettingRow>
+              <SettingRow label="手柄模式" description="UHID 将电脑手柄模拟为 Android 物理手柄">
+                <SelectControl value={settings.gamepadMode} onChange={(value) => setSettings({ ...settings, gamepadMode: value })} options={[["disabled", "禁用"], ["uhid", "UHID"]]} />
+              </SettingRow>
+              <div className="toggle-section">
+                <Toggle label="显示触摸位置" description="在手机屏幕上显示物理触摸反馈" checked={settings.showTouches} onChange={(value) => setSettings({ ...settings, showTouches: value })} />
+                <Toggle label="全屏启动" description="投屏窗口打开后立即进入全屏" checked={settings.fullscreen} onChange={(value) => setSettings({ ...settings, fullscreen: value })} />
+                <Toggle label="窗口置顶" description="让投屏窗口保持在其他窗口上方" checked={settings.alwaysOnTop} onChange={(value) => setSettings({ ...settings, alwaysOnTop: value })} />
+                <Toggle label="无边框窗口" description="隐藏投屏窗口的标题栏和边框" checked={settings.borderless} onChange={(value) => setSettings({ ...settings, borderless: value })} />
+              </div>
+            </section>
+          ) : activeTab === "音频" ? (
+            <section className="settings-pane">
+              <div className="toggle-section top-toggle">
+                <Toggle label="转发设备音频" description="Android 11 及以上系统支持音频转发" checked={settings.audioEnabled} onChange={(value) => setSettings({ ...settings, audioEnabled: value })} />
+              </div>
+              <fieldset className="settings-fieldset" disabled={!settings.audioEnabled}>
+                <SettingRow label="音频源" description="输出捕获整个系统声音，播放仅捕获允许的应用">
+                  <SelectControl value={settings.audioSource} onChange={(value) => setSettings({ ...settings, audioSource: value, audioDup: value === "playback" ? settings.audioDup : false })} options={[["output", "系统输出"], ["playback", "应用播放"], ["mic", "麦克风"]]} />
+                </SettingRow>
+                <SettingRow label="音频编码" description="Opus 延迟低，AAC 兼容性好，FLAC 无损">
+                  <div className="segmented three">
+                    {["opus", "aac", "flac"].map((codec) => <button type="button" className={settings.audioCodec === codec ? "active" : ""} key={codec} onClick={() => setSettings({ ...settings, audioCodec: codec })}>{codec.toUpperCase()}</button>)}
+                  </div>
+                </SettingRow>
+                <SettingRow label="音频码率" description="仅对 Opus 和 AAC 编码生效">
+                  <div className="slider-control">
+                    <input type="range" min={64} max={320} step={32} disabled={settings.audioCodec === "flac"} value={settings.audioBitrateKbps} onChange={(event) => setSettings({ ...settings, audioBitrateKbps: Number(event.target.value) })} />
+                    <output>{settings.audioBitrateKbps} Kbps</output>
+                  </div>
+                </SettingRow>
+                <div className="toggle-section">
+                  <Toggle label="设备同时播放" description="仅在音频源为“应用播放”时可用" disabled={settings.audioSource !== "playback"} checked={settings.audioDup} onChange={(value) => setSettings({ ...settings, audioDup: value })} />
+                </div>
+              </fieldset>
+            </section>
           ) : (
-            <section className="placeholder-pane">
-              <div className="placeholder-icon"><Settings size={24} /></div>
-              <h3>{activeTab}设置</h3>
-              <p>这个配置页将在下一阶段接入对应的 scrcpy 参数。</p>
+            <section className="settings-pane">
+              <div className="toggle-section top-toggle">
+                <Toggle label="录制投屏内容" description="将视频与音频保存到本地文件" checked={settings.recordEnabled} onChange={(value) => setSettings({ ...settings, recordEnabled: value })} />
+              </div>
+              <fieldset className="settings-fieldset" disabled={!settings.recordEnabled}>
+                <SettingRow label="保存路径" description="支持绝对路径或相对于 GUI 启动目录的路径">
+                  <input className="text-field" value={settings.recordPath} placeholder="scrcpy-recording.mp4" onChange={(event) => setSettings({ ...settings, recordPath: event.target.value })} />
+                </SettingRow>
+                <SettingRow label="文件格式" description="MP4 通用性更好，MKV 对编码组合更宽容">
+                  <div className="segmented two">
+                    {["mp4", "mkv"].map((format) => <button type="button" className={settings.recordFormat === format ? "active" : ""} key={format} onClick={() => setSettings({ ...settings, recordFormat: format, recordPath: settings.recordPath.replace(/\.(mp4|mkv)$/i, `.${format}`) })}>{format.toUpperCase()}</button>)}
+                  </div>
+                </SettingRow>
+                <div className="toggle-section">
+                  <Toggle label="仅录制，不播放" description="不打开投屏播放窗口，仅在后台录制" checked={settings.noPlayback} onChange={(value) => setSettings({ ...settings, noPlayback: value })} />
+                </div>
+              </fieldset>
             </section>
           )}
 
@@ -318,8 +430,12 @@ function SettingRow({ label, description, children }: { label: string; descripti
   return <div className="setting-row"><div className="setting-label"><strong>{label}</strong><span>{description}</span></div><div className="setting-control">{children}</div></div>;
 }
 
-function Toggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (value: boolean) => void }) {
-  return <div className="toggle-row"><div><strong>{label}</strong><span>{description}</span></div><button className={`switch ${checked ? "on" : ""}`} role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}><i /></button></div>;
+function SelectControl({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: [string, string][] }) {
+  return <div className="select-wrap"><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([optionValue, label]) => <option value={optionValue} key={optionValue}>{label}</option>)}</select><ChevronDown size={17} /></div>;
+}
+
+function Toggle({ label, description, checked, disabled = false, onChange }: { label: string; description: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
+  return <div className={`toggle-row ${disabled ? "disabled" : ""}`}><div><strong>{label}</strong><span>{description}</span></div><button disabled={disabled} className={`switch ${checked ? "on" : ""}`} role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}><i /></button></div>;
 }
 
 export default App;

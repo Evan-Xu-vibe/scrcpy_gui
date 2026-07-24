@@ -105,13 +105,15 @@ button { color: inherit; }
 .select-wrap { position: relative; }
 .select-wrap select { width: 100%; appearance: none; }
 .select-wrap svg { position: absolute; top: 50%; right: 12px; color: var(--muted); pointer-events: none; transform: translateY(-50%); }
-select, .number-field, .modal > input { height: 42px; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); background: var(--surface-raised); outline: none; }
+select, .number-field, .text-field, .modal > input { height: 42px; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); background: var(--surface-raised); outline: none; }
 select { padding: 0 38px 0 12px; }
-select:focus, .number-field:focus-within, .modal > input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent); }
+select:focus, .number-field:focus-within, .text-field:focus, .modal > input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent); }
+.text-field { width: 100%; padding: 0 12px; }
 .number-field { display: flex; align-items: center; }
 .number-field input { width: 100%; height: 100%; padding: 0 12px; border: 0; color: var(--text); background: transparent; outline: none; }
 .number-field span { padding-right: 12px; color: var(--muted); font-size: 12px; }
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); height: 42px; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; }
+.segmented.two { grid-template-columns: repeat(2, 1fr); }
 .segmented button { border: 0; border-right: 1px solid var(--border); background: var(--surface-raised); cursor: pointer; font-size: 13px; }
 .segmented button:last-child { border-right: 0; }
 .segmented button.active { color: var(--blue); background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue); font-weight: 700; }
@@ -119,11 +121,16 @@ select:focus, .number-field:focus-within, .modal > input:focus { border-color: v
 .slider-control input { width: 100%; accent-color: var(--blue); }
 .slider-control output { color: var(--text); font-size: 13px; text-align: right; }
 .toggle-section { padding-top: 8px; }
+.toggle-section.top-toggle { padding: 0; border-bottom: 1px solid var(--border); }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; min-height: 68px; }
+.toggle-row.disabled { opacity: .48; }
+.settings-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.settings-fieldset:disabled { opacity: .52; }
 .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 12px; background: var(--border-strong); cursor: pointer; transition: background .18s ease; }
 .switch i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0003; transition: transform .18s ease; }
 .switch.on { background: var(--blue); }
 .switch.on i { transform: translateX(18px); }
+.switch:disabled { cursor: not-allowed; }
 .placeholder-pane { display: flex; align-items: center; justify-content: center; flex-direction: column; color: var(--muted); text-align: center; }
 .placeholder-icon { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 8px; color: var(--blue); background: var(--blue-soft); }
 .placeholder-pane h3 { margin: 16px 0 4px; color: var(--text); font-size: 16px; }
