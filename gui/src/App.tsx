@@ -338,7 +338,7 @@ function App() {
                 <SelectControl value={settings.gamepadMode} onChange={(value) => setSettings({ ...settings, gamepadMode: value })} options={[["disabled", "禁用"], ["uhid", "UHID"]]} />
               </SettingRow>
               <div className="toggle-section">
-                <Toggle label="显示触摸位置" description="在手机屏幕上显示物理触摸反馈" checked={settings.showTouches} onChange={(value) => setSettings({ ...settings, showTouches: value })} />
+                <Toggle label="显示手机物理触点" description="仅显示手指直接触摸手机屏幕的位置，不显示电脑鼠标点击" checked={settings.showTouches} onChange={(value) => setSettings({ ...settings, showTouches: value })} />
                 <Toggle label="全屏启动" description="投屏窗口打开后立即进入全屏" checked={settings.fullscreen} onChange={(value) => setSettings({ ...settings, fullscreen: value })} />
                 <Toggle label="窗口置顶" description="让投屏窗口保持在其他窗口上方" checked={settings.alwaysOnTop} onChange={(value) => setSettings({ ...settings, alwaysOnTop: value })} />
                 <Toggle label="无边框窗口" description="隐藏投屏窗口的标题栏和边框" checked={settings.borderless} onChange={(value) => setSettings({ ...settings, borderless: value })} />
