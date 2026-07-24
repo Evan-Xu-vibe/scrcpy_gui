@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  CheckCircle2,
   ChevronDown,
   CircleStop,
+  Download,
   FileText,
   LoaderCircle,
   MonitorSmartphone,
@@ -10,6 +12,7 @@ import {
   Play,
   RefreshCw,
   Settings,
+  ShieldCheck,
   Smartphone,
   Sun,
   Wifi,
@@ -59,6 +62,16 @@ interface ScrcpyProcessStatus {
   error?: string;
 }
 
+interface EngineUpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  managed: boolean;
+  releaseUrl: string;
+  publishedAt: string;
+  downloadSize: number;
+}
+
 const tabs = ["画面", "控制", "音频", "录制"];
 const isTauri = "__TAURI_INTERNALS__" in window;
 const settingsStorageKey = "scrcpy-gui.settings.v1";
@@ -103,6 +116,16 @@ function stateLabel(state: DeviceState) {
   return state;
 }
 
+function formatBytes(value: number) {
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatReleaseDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("zh-CN");
+}
+
 function App() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [selectedSerial, setSelectedSerial] = useState("");
@@ -113,6 +136,11 @@ function App() {
   const [notice, setNotice] = useState("正在检查 ADB 设备…");
   const [wirelessOpen, setWirelessOpen] = useState(false);
   const [wirelessAddress, setWirelessAddress] = useState("");
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<EngineUpdateInfo | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [updateError, setUpdateError] = useState("");
   const [settings, setSettings] = useState<Omit<LaunchSettings, "serial">>(loadSettings);
 
   const selected = useMemo(
@@ -163,6 +191,52 @@ function App() {
   useEffect(() => {
     localStorage.setItem("scrcpy-gui.theme", dark ? "dark" : "light");
   }, [dark]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const timer = window.setTimeout(() => void checkEngineUpdate(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  async function checkEngineUpdate(showResult = true) {
+    if (!isTauri || updateChecking || updateInstalling) return;
+    setUpdateChecking(true);
+    setUpdateError("");
+    try {
+      const info = await invoke<EngineUpdateInfo>("check_scrcpy_update");
+      setUpdateInfo(info);
+      if (info.updateAvailable) {
+        setNotice(`发现 scrcpy ${info.latestVersion} 更新`);
+      } else if (showResult) {
+        setNotice(`scrcpy ${info.currentVersion} 已是最新版本`);
+      }
+    } catch (error) {
+      const message = String(error);
+      setUpdateError(message);
+      if (showResult) setNotice(message);
+    } finally {
+      setUpdateChecking(false);
+    }
+  }
+
+  async function installEngineUpdate() {
+    if (running || updateInstalling) return;
+    setUpdateInstalling(true);
+    setUpdateError("");
+    setNotice("正在下载并校验 scrcpy 官方更新…");
+    try {
+      const info = await invoke<EngineUpdateInfo>("install_scrcpy_update");
+      setUpdateInfo(info);
+      setNotice(`scrcpy ${info.currentVersion} 已安装，下次投屏立即生效`);
+      await refreshDevices();
+    } catch (error) {
+      const message = String(error);
+      setUpdateError(message);
+      setNotice(message);
+    } finally {
+      setUpdateInstalling(false);
+    }
+  }
 
   async function toggleScrcpy() {
     if (!selected || selected.state !== "device") return;
@@ -225,7 +299,7 @@ function App() {
           <IconButton label={dark ? "切换浅色主题" : "切换深色主题"} onClick={() => setDark((value) => !value)}>
             {dark ? <Sun size={18} /> : <Moon size={18} />}
           </IconButton>
-          <IconButton label="设置" onClick={() => setNotice("应用设置将在下一阶段接入")}>
+          <IconButton className={updateInfo?.updateAvailable ? "has-update" : ""} label={updateInfo?.updateAvailable ? "有可用更新" : "设置与更新"} onClick={() => { setUpdateOpen(true); if (!updateInfo) void checkEngineUpdate(false); }}>
             <Settings size={18} />
           </IconButton>
         </div>
@@ -405,7 +479,7 @@ function App() {
 
       <footer className="statusbar">
         <span className="status-message"><i className={`state-dot ${notice.includes("失败") || notice.includes("error") ? "offline" : "device"}`} />{notice}</span>
-        <span>ADB</span><span>scrcpy 4.1</span>
+        <span>ADB</span><span>scrcpy {updateInfo?.currentVersion ?? "4.1"}</span>
       </footer>
 
       {wirelessOpen && (
@@ -415,6 +489,48 @@ function App() {
             <label htmlFor="wireless-address">IP 地址与端口</label>
             <input id="wireless-address" autoFocus placeholder="192.168.1.88:5555" value={wirelessAddress} onChange={(event) => setWirelessAddress(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void connectWireless()} />
             <div className="modal-actions"><button className="secondary-button" onClick={() => setWirelessOpen(false)}>取消</button><button className="primary-button compact" disabled={!wirelessAddress.trim()} onClick={() => void connectWireless()}>连接</button></div>
+          </section>
+        </div>
+      )}
+
+      {updateOpen && (
+        <div className="modal-backdrop" onMouseDown={() => !updateInstalling && setUpdateOpen(false)}>
+          <section className="modal update-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div><h3>scrcpy 引擎更新</h3><p>从 Genymobile 官方 GitHub Release 获取 Windows 版本</p></div>
+              <IconButton label="关闭" disabled={updateInstalling} onClick={() => setUpdateOpen(false)}><X size={18} /></IconButton>
+            </div>
+
+            <div className="engine-summary">
+              <span className={`engine-icon ${updateInfo?.updateAvailable ? "available" : ""}`}>
+                {updateChecking || updateInstalling ? <LoaderCircle className="spin" size={24} /> : updateInfo?.updateAvailable ? <Download size={24} /> : <CheckCircle2 size={24} />}
+              </span>
+              <div>
+                <strong>{updateInstalling ? "正在下载、校验并安装" : updateChecking ? "正在检查 GitHub Release" : updateInfo?.updateAvailable ? `发现 scrcpy ${updateInfo.latestVersion}` : updateInfo ? "引擎版本已是最新" : "尚未检查更新"}</strong>
+                <span>{updateInstalling ? "完成前请保持应用运行" : updateInfo?.updateAvailable ? "停止投屏后即可安全更新" : "更新失败时仍会保留当前可用版本"}</span>
+              </div>
+            </div>
+
+            {updateInfo && (
+              <div className="version-grid">
+                <div><span>当前版本</span><strong>{updateInfo.currentVersion}</strong></div>
+                <div><span>最新版本</span><strong>{updateInfo.latestVersion}</strong></div>
+                <div><span>发布日期</span><strong>{formatReleaseDate(updateInfo.publishedAt)}</strong></div>
+                <div><span>下载大小</span><strong>{formatBytes(updateInfo.downloadSize)}</strong></div>
+              </div>
+            )}
+
+            <div className="security-note"><ShieldCheck size={17} /><span>安装前校验官方 SHA-256；新版本完整就绪后才会切换，旧版本保留用于故障回退。</span></div>
+            {running && <div className="update-warning">当前正在投屏，请先停止投屏再安装更新。</div>}
+            {updateError && <div className="update-error">{updateError}</div>}
+
+            <div className="modal-actions update-actions">
+              <button className="secondary-button" disabled={updateChecking || updateInstalling} onClick={() => void checkEngineUpdate()}><RefreshCw size={16} className={updateChecking ? "spin" : ""} />检查更新</button>
+              <button className="primary-button compact update-button" disabled={running || updateChecking || updateInstalling || !updateInfo?.updateAvailable} onClick={() => void installEngineUpdate()}>
+                {updateInstalling ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
+                {updateInstalling ? "正在安装" : updateInfo?.updateAvailable ? "立即更新" : "已是最新"}
+              </button>
+            </div>
           </section>
         </div>
       )}
