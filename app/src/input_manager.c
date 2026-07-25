@@ -54,7 +54,7 @@ sc_input_manager_init(struct sc_input_manager *im,
 static void
 send_keycode(struct sc_input_manager *im, enum android_keycode keycode,
              enum sc_action action, const char *name) {
-    assert(im->controller && im->kp && !im->camera);
+    assert(im->controller && !im->camera);
 
     // send DOWN event
     struct sc_control_msg msg;
@@ -277,6 +277,51 @@ rotate_device(struct sc_input_manager *im) {
     if (!sc_controller_push_msg(im->controller, &msg)) {
         LOGW("Could not request device rotation");
     }
+}
+
+bool
+sc_input_manager_execute_toolbar_action(
+    struct sc_input_manager *im, enum sc_toolbar_action action) {
+    if (!im->controller || im->camera || im->disconnected) {
+        return false;
+    }
+
+    switch (action) {
+        case SC_TOOLBAR_ACTION_BACK:
+            press_back_or_turn_screen_on(im, SC_ACTION_DOWN);
+            press_back_or_turn_screen_on(im, SC_ACTION_UP);
+            return true;
+        case SC_TOOLBAR_ACTION_HOME:
+            action_home(im, SC_ACTION_DOWN);
+            action_home(im, SC_ACTION_UP);
+            return true;
+        case SC_TOOLBAR_ACTION_APP_SWITCH:
+            action_app_switch(im, SC_ACTION_DOWN);
+            action_app_switch(im, SC_ACTION_UP);
+            return true;
+        case SC_TOOLBAR_ACTION_ROTATE_DEVICE:
+            rotate_device(im);
+            return true;
+        case SC_TOOLBAR_ACTION_POWER:
+            action_power(im, SC_ACTION_DOWN);
+            action_power(im, SC_ACTION_UP);
+            return true;
+        case SC_TOOLBAR_ACTION_VOLUME_DOWN:
+            action_volume_down(im, SC_ACTION_DOWN);
+            action_volume_down(im, SC_ACTION_UP);
+            return true;
+        case SC_TOOLBAR_ACTION_VOLUME_UP:
+            action_volume_up(im, SC_ACTION_DOWN);
+            action_volume_up(im, SC_ACTION_UP);
+            return true;
+        case SC_TOOLBAR_ACTION_EXPAND_NOTIFICATIONS:
+            expand_notification_panel(im);
+            return true;
+        case SC_TOOLBAR_ACTION_NONE:
+            return false;
+    }
+
+    return false;
 }
 
 static void

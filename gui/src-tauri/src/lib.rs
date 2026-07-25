@@ -48,6 +48,7 @@ struct LaunchSettings {
     fullscreen: bool,
     always_on_top: bool,
     borderless: bool,
+    toolbar: bool,
     audio_enabled: bool,
     audio_source: String,
     audio_codec: String,
@@ -408,6 +409,9 @@ fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> 
     }
     if settings.borderless {
         command.arg("--window-borderless");
+    }
+    if settings.toolbar {
+        command.arg("--toolbar");
     }
     if settings.audio_enabled {
         command

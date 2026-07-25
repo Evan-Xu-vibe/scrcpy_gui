@@ -42,6 +42,7 @@ interface LaunchSettings {
   fullscreen: boolean;
   alwaysOnTop: boolean;
   borderless: boolean;
+  toolbar: boolean;
   audioEnabled: boolean;
   audioSource: string;
   audioCodec: string;
@@ -75,6 +76,7 @@ const defaultSettings: Omit<LaunchSettings, "serial"> = {
   fullscreen: false,
   alwaysOnTop: false,
   borderless: false,
+  toolbar: true,
   audioEnabled: true,
   audioSource: "output",
   audioCodec: "opus",
@@ -338,6 +340,7 @@ function App() {
                 <Toggle label="全屏启动" description="投屏窗口打开后立即进入全屏" checked={settings.fullscreen} onChange={(value) => setSettings({ ...settings, fullscreen: value })} />
                 <Toggle label="窗口置顶" description="让投屏窗口保持在其他窗口上方" checked={settings.alwaysOnTop} onChange={(value) => setSettings({ ...settings, alwaysOnTop: value })} />
                 <Toggle label="无边框窗口" description="隐藏投屏窗口的标题栏和边框" checked={settings.borderless} onChange={(value) => setSettings({ ...settings, borderless: value })} />
+                <Toggle label="投屏工具栏" description="在投屏窗口右侧显示返回、主页、音量等快捷控制" checked={settings.toolbar} onChange={(value) => setSettings({ ...settings, toolbar: value })} />
               </div>
             </section>
           ) : activeTab === "音频" ? (

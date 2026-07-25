@@ -19,6 +19,7 @@
 #include "mouse_capture.h"
 #include "options.h"
 #include "texture.h"
+#include "toolbar.h"
 #include "trait/key_processor.h"
 #include "trait/frame_sink.h"
 #include "trait/mouse_processor.h"
@@ -49,6 +50,7 @@ struct sc_screen {
     } bg;
 
     struct sc_texture tex;
+    struct sc_toolbar toolbar;
     struct sc_input_manager im;
     struct sc_mouse_capture mc; // only used in mouse relative mode
     struct sc_fps_counter fps_counter;
@@ -137,6 +139,7 @@ struct sc_screen_params {
 
     bool window_aspect_ratio_lock;
     bool window_borderless;
+    bool toolbar;
 
     enum sc_render_fit render_fit;
     enum sc_orientation orientation;

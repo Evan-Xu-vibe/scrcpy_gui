@@ -7,6 +7,7 @@
 
 #define SC_ICON_FILENAME_SCRCPY "scrcpy.png"
 #define SC_ICON_FILENAME_DISCONNECTED "disconnected.png"
+#define SC_ICON_FILENAME_TOOLBAR "toolbar-icons.png"
 
 SDL_Surface *
 sc_icon_load(const char *filename);

@@ -18,6 +18,11 @@ static void
 set_aspect_ratio(struct sc_screen *screen, struct sc_size content_size) {
     assert(content_size.width && content_size.height);
 
+    if (screen->toolbar.enabled) {
+        // A fixed-width toolbar makes the outer window aspect ratio variable.
+        return;
+    }
+
     if (screen->window_aspect_ratio_lock) {
         float ar = (float) content_size.width / content_size.height;
         bool ok = SDL_SetWindowAspectRatio(screen->window, ar, ar);
@@ -164,60 +169,113 @@ sc_screen_is_relative_mode(struct sc_screen *screen) {
 }
 
 static void
-compute_content_rect(struct sc_size window_size, struct sc_size content_size,
+sc_screen_load_toolbar_icons(struct sc_screen *screen) {
+    if (!screen->toolbar.enabled) {
+        return;
+    }
+
+    SDL_Surface *surface = sc_icon_load(SC_ICON_FILENAME_TOOLBAR);
+    if (!surface) {
+        LOGW("Could not load toolbar icons");
+        return;
+    }
+
+    SDL_Texture *icons =
+        SDL_CreateTextureFromSurface(screen->renderer, surface);
+    sc_icon_destroy(surface);
+    if (!icons) {
+        LOGW("Could not create toolbar icon texture: %s", SDL_GetError());
+        return;
+    }
+
+    SDL_SetTextureBlendMode(icons, SDL_BLENDMODE_BLEND);
+    sc_toolbar_set_icons(&screen->toolbar, icons);
+}
+
+static struct SDL_FRect
+sc_screen_get_video_viewport(struct sc_screen *screen,
+                             struct sc_size window_size) {
+    uint16_t toolbar_width = 0;
+    if (screen->toolbar.enabled && window_size.width > 1) {
+        toolbar_width = MIN(sc_toolbar_get_width(&screen->toolbar),
+                            window_size.width - 1);
+    }
+
+    sc_toolbar_layout(&screen->toolbar, window_size.width, window_size.height);
+    return (SDL_FRect) {
+        .x = 0,
+        .y = 0,
+        .w = window_size.width - toolbar_width,
+        .h = window_size.height,
+    };
+}
+
+static struct sc_size
+sc_screen_get_window_size_for_content(struct sc_screen *screen,
+                                      struct sc_size content_size) {
+    uint32_t width = content_size.width;
+    if (screen->toolbar.enabled) {
+        width += sc_toolbar_get_width(&screen->toolbar);
+    }
+    return (struct sc_size) {
+        .width = MIN(width, UINT16_MAX),
+        .height = content_size.height,
+    };
+}
+
+static void
+compute_content_rect(SDL_FRect viewport, struct sc_size content_size,
                      bool is_icon, enum sc_render_fit render_fit,
                      SDL_FRect *rect) {
     if (is_icon) {
-        if (content_size.width <= window_size.width
-                && content_size.height <= window_size.height) {
+        if (content_size.width <= viewport.w
+                && content_size.height <= viewport.h) {
             // Center without upscaling
-            rect->x = (window_size.width - content_size.width) / 2.f;
-            rect->y = (window_size.height - content_size.height) / 2.f;
+            rect->x = viewport.x + (viewport.w - content_size.width) / 2.f;
+            rect->y = viewport.y + (viewport.h - content_size.height) / 2.f;
             rect->w = content_size.width;
             rect->h = content_size.height;
             return;
         }
     } else if (render_fit == SC_RENDER_FIT_UNSCALED) {
         // Cast to float first because input sizes are unsigned
-        float x = ((float) window_size.width - content_size.width) / 2.f;
-        float y = ((float) window_size.height - content_size.height) / 2.f;
-        rect->x = MAX(0, x);
-        rect->y = MAX(0, y);
+        float x = (viewport.w - content_size.width) / 2.f;
+        float y = (viewport.h - content_size.height) / 2.f;
+        rect->x = viewport.x + MAX(0, x);
+        rect->y = viewport.y + MAX(0, y);
         rect->w = content_size.width;
         rect->h = content_size.height;
         return;
     } else if (render_fit == SC_RENDER_FIT_STRETCHED) {
-        rect->x = 0;
-        rect->y = 0;
-        rect->w = window_size.width;
-        rect->h = window_size.height;
+        *rect = viewport;
         return;
     }
 
     assert(is_icon || render_fit == SC_RENDER_FIT_LETTERBOX);
 
-    if (is_optimal_size(window_size, content_size)) {
-        rect->x = 0;
-        rect->y = 0;
-        rect->w = window_size.width;
-        rect->h = window_size.height;
+    struct sc_size viewport_size = {
+        .width = viewport.w,
+        .height = viewport.h,
+    };
+    if (is_optimal_size(viewport_size, content_size)) {
+        *rect = viewport;
         return;
     }
 
-    bool keep_width = (uint32_t) content_size.width * window_size.height
-                    > (uint32_t) content_size.height * window_size.width;
+    bool keep_width = (uint32_t) content_size.width * viewport.h
+                    > (uint32_t) content_size.height * viewport.w;
     if (keep_width) {
-        rect->x = 0;
-        rect->w = window_size.width;
-        rect->h = (float) window_size.width * content_size.height
+        rect->x = viewport.x;
+        rect->w = viewport.w;
+        rect->h = viewport.w * content_size.height
                                             / content_size.width;
-        rect->y = (window_size.height - rect->h) / 2.f;
+        rect->y = viewport.y + (viewport.h - rect->h) / 2.f;
     } else {
-        rect->y = 0;
-        rect->h = window_size.height;
-        rect->w = (float) window_size.height * content_size.width
+        rect->y = viewport.y;
+        rect->h = viewport.h;
+        rect->w = viewport.h * content_size.width
                                              / content_size.height;
-        rect->x = (window_size.width - rect->w) / 2.f;
+        rect->x = viewport.x + (viewport.w - rect->w) / 2.f;
     }
 }
 
@@ -227,7 +285,8 @@ sc_screen_update_content_rect(struct sc_screen *screen) {
     bool is_icon = !screen->video || screen->disconnected;
 
     struct sc_size window_size = sc_sdl_get_window_size(screen->window);
-    compute_content_rect(window_size, screen->content_size, is_icon,
+    SDL_FRect viewport = sc_screen_get_video_viewport(screen, window_size);
+    compute_content_rect(viewport, screen->content_size, is_icon,
                          screen->render_fit, &screen->rect);
 }
 
@@ -248,17 +307,17 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect) {
     SDL_SetRenderDrawColor(renderer, bg.r, bg.g, bg.b, 0);
     sc_sdl_render_clear(renderer);
 
-    SDL_Texture *texture = screen->tex.texture;
-    if (!texture) {
-        goto end;
-    }
-
     float scale = SDL_GetWindowPixelDensity(screen->window);
     if (scale == 0) {
         // Just in case, but in practice the function can only fail when window
         // is invalid
         LOGE("Cannot get scale value: %s", SDL_GetError());
         scale = 1;
+    }
+
+    SDL_Texture *texture = screen->tex.texture;
+    if (!texture) {
+        goto end;
     }
 
     SDL_FRect geometry = {
@@ -306,6 +365,7 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect) {
     }
 
 end:
+    sc_toolbar_render(&screen->toolbar, renderer, scale);
     sc_sdl_render_present(renderer);
 }
 
@@ -314,6 +374,9 @@ sc_screen_request_resize_display(struct sc_screen *screen, uint16_t width,
                                  uint16_t height) {
     assert(screen->flex_display);
     assert(!screen->camera);
+    if (screen->toolbar.enabled && width > 1) {
+        width -= MIN(sc_toolbar_get_width(&screen->toolbar), width - 1);
+    }
     if (sc_orientation_is_swap(screen->orientation)) {
         uint16_t tmp = width;
         width = height;
@@ -338,8 +401,16 @@ sc_screen_on_resize(struct sc_screen *screen, const SDL_WindowEvent *event) {
         if (screen->flex_display) {
             assert(!(event->data1 & ~0xFFFF));
             assert(!(event->data2 & ~0xFFFF));
-            uint16_t width = event->data1;
-            uint16_t height = event->data2;
+            uint16_t window_width = event->data1;
+            uint16_t window_height = event->data2;
+            struct sc_size window_size = {
+                .width = window_width,
+                .height = window_height,
+            };
+            SDL_FRect viewport =
+                sc_screen_get_video_viewport(screen, window_size);
+            uint16_t width = viewport.w;
+            uint16_t height = viewport.h;
 
             struct sc_resize_tracker *tracker = &screen->resize_tracker;
             if (tracker->time
@@ -355,7 +426,8 @@ sc_screen_on_resize(struct sc_screen *screen, const SDL_WindowEvent *event) {
                      width, height);
                 tracker->time = 0;
             } else {
-                sc_screen_request_resize_display(screen, width, height);
+                sc_screen_request_resize_display(screen, window_width,
+                                                 window_height);
             }
         }
     }
@@ -498,6 +570,8 @@ sc_screen_init(struct sc_screen *screen,
     screen->window_aspect_ratio_lock = params->window_aspect_ratio_lock;
     screen->render_fit = params->render_fit;
     screen->flex_display = params->flex_display;
+    sc_toolbar_init(&screen->toolbar,
+                    params->toolbar && params->controller && !params->camera);
 
     screen->bg.r = (params->background_color >> 16) & 0xFF;
     screen->bg.g = (params->background_color >> 8) & 0xFF;
@@ -584,6 +658,8 @@ sc_screen_init(struct sc_screen *screen,
         LOGE("Could not create renderer: %s", SDL_GetError());
         goto error_destroy_window;
     }
+
+    sc_screen_load_toolbar_icons(screen);
 
 #ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
     screen->gl_context = NULL;
@@ -714,6 +790,7 @@ sc_screen_init(struct sc_screen *screen,
 error_destroy_texture:
     sc_texture_destroy(&screen->tex);
 error_destroy_renderer:
+    sc_toolbar_destroy(&screen->toolbar);
 #ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
     if (screen->gl_context) {
         SDL_GL_DestroyContext(screen->gl_context);
@@ -743,16 +820,25 @@ sc_screen_show_initial_window(struct sc_screen *screen) {
         .y = y,
     };
 
-    struct sc_size window_size =
-        get_initial_optimal_size(screen->content_size, screen->req.width,
+    uint16_t requested_width = screen->req.width;
+    if (requested_width && screen->toolbar.enabled) {
+        uint16_t toolbar_width = sc_toolbar_get_width(&screen->toolbar);
+        requested_width = requested_width > toolbar_width
+                        ? requested_width - toolbar_width
+                        : 1;
+    }
+    struct sc_size content_window_size =
+        get_initial_optimal_size(screen->content_size, requested_width,
                                                        screen->req.height);
+    struct sc_size window_size =
+        sc_screen_get_window_size_for_content(screen, content_window_size);
 
     if (screen->flex_display
-            && window_size.width == screen->content_size.width
-            && window_size.height == screen->content_size.height) {
+            && content_window_size.width == screen->content_size.width
+            && content_window_size.height == screen->content_size.height) {
         // Avoid sending an unnecessary initial "resize display" request to the
         // server if the size has not changed.
-        sc_screen_track_resize(screen, window_size);
+        sc_screen_track_resize(screen, content_window_size);
     }
 
     assert(is_windowed(screen));
@@ -812,6 +898,7 @@ sc_screen_destroy(struct sc_screen *screen) {
 #ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
     SDL_GL_DestroyContext(screen->gl_context);
 #endif
+    sc_toolbar_destroy(&screen->toolbar);
     SDL_DestroyRenderer(screen->renderer);
     SDL_DestroyWindow(screen->window);
     sc_fps_counter_destroy(&screen->fps_counter);
@@ -845,13 +932,15 @@ resize_for_content(struct sc_screen *screen, struct sc_size old_content_size,
     struct sc_size target_size = new_content_size;
     if (!screen->flex_display) {
         struct sc_size window_size = sc_sdl_get_window_size(screen->window);
+        SDL_FRect viewport = sc_screen_get_video_viewport(screen, window_size);
         // Scale proportionally
-        target_size.width = (uint32_t) window_size.width * target_size.width
+        target_size.width = viewport.w * target_size.width
                           / old_content_size.width;
-        target_size.height = (uint32_t) window_size.height * target_size.height
+        target_size.height = viewport.h * target_size.height
                            / old_content_size.height;
     }
     target_size = get_optimal_size(target_size, new_content_size, true);
+    target_size = sc_screen_get_window_size_for_content(screen, target_size);
     assert(is_windowed(screen));
     set_aspect_ratio(screen, new_content_size);
     sc_sdl_set_window_size(screen->window, target_size);
@@ -1048,16 +1137,18 @@ sc_screen_resize_to_fit(struct sc_screen *screen) {
 
     if (screen->render_fit == SC_RENDER_FIT_UNSCALED) {
         struct sc_size content_size = screen->content_size;
+        struct sc_size target_size =
+            sc_screen_get_window_size_for_content(screen, content_size);
         set_aspect_ratio(screen, content_size);
-        sc_sdl_set_window_size(screen->window, content_size);
+        sc_sdl_set_window_size(screen->window, target_size);
 
         int32_t x_offset = 0;
-        if (content_size.width < window_size.width) {
-            x_offset = (window_size.width - content_size.width) / 2;
+        if (target_size.width < window_size.width) {
+            x_offset = (window_size.width - target_size.width) / 2;
         }
         int32_t y_offset = 0;
-        if (content_size.height < window_size.height) {
-            y_offset = (window_size.height - content_size.height) / 2;
+        if (target_size.height < window_size.height) {
+            y_offset = (window_size.height - target_size.height) / 2;
         }
         assert(x_offset >= 0 && y_offset >= 0);
         if (x_offset || y_offset) {
@@ -1076,8 +1167,14 @@ sc_screen_resize_to_fit(struct sc_screen *screen) {
 
     struct sc_point point = sc_sdl_get_window_position(screen->window);
 
+    SDL_FRect viewport = sc_screen_get_video_viewport(screen, window_size);
+    struct sc_size viewport_size = {
+        .width = viewport.w,
+        .height = viewport.h,
+    };
     struct sc_size optimal_size =
-        get_optimal_size(window_size, screen->content_size, false);
+        get_optimal_size(viewport_size, screen->content_size, false);
+    optimal_size = sc_screen_get_window_size_for_content(screen, optimal_size);
 
     // Center the window related to the device screen
     assert(optimal_size.width <= window_size.width);
@@ -1104,8 +1201,10 @@ sc_screen_resize_to_pixel_perfect(struct sc_screen *screen) {
     }
 
     struct sc_size content_size = screen->content_size;
+    struct sc_size target_size =
+        sc_screen_get_window_size_for_content(screen, content_size);
     set_aspect_ratio(screen, content_size);
-    sc_sdl_set_window_size(screen->window, content_size);
+    sc_sdl_set_window_size(screen->window, target_size);
     LOGD("Resized to pixel-perfect: %ux%u", content_size.width,
                                             content_size.height);
 }
@@ -1162,6 +1261,12 @@ sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
         case SDL_EVENT_WINDOW_EXPOSED:
             sc_screen_render(screen, true);
             return;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            sc_toolbar_clear_state(&screen->toolbar);
+            if (screen->window_shown) {
+                sc_screen_render(screen, false);
+            }
+            return;
 // If defined, then the actions are already performed by the event watcher
 #ifndef CONTINUOUS_RESIZING_WORKAROUND
         case SDL_EVENT_WINDOW_RESIZED:
@@ -1217,6 +1322,17 @@ sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
     if (sc_screen_is_relative_mode(screen)
             && sc_mouse_capture_handle_event(&screen->mc, event)) {
         // The mouse capture handler consumed the event
+        return;
+    }
+
+    enum sc_toolbar_action action;
+    if (sc_toolbar_handle_event(&screen->toolbar, event, &action)) {
+        if (action != SC_TOOLBAR_ACTION_NONE) {
+            sc_input_manager_execute_toolbar_action(&screen->im, action);
+        }
+        if (screen->window_shown) {
+            sc_screen_render(screen, false);
+        }
         return;
     }
 

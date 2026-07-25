@@ -34,6 +34,7 @@ src = [
     'src/sdl_hints.c',
     'src/server.c',
     'src/texture.c',
+    'src/toolbar.c',
     'src/version.c',
     'src/video_regulator.c',
     'src/hid/hid_gamepad.c',
@@ -204,6 +205,8 @@ install_data('data/scrcpy.png',
              install_dir: datadir / 'icons/hicolor/256x256/apps')
 install_data('data/disconnected.png',
              install_dir: datadir / 'icons/hicolor/256x256/apps')
+install_data('data/toolbar-icons.png',
+             install_dir: datadir / 'icons/hicolor/256x256/apps')
 install_data('data/zsh-completion/_scrcpy',
              install_dir: datadir / 'zsh/site-functions')
 install_data('data/bash-completion/scrcpy',
@@ -268,6 +271,10 @@ if get_option('buildtype') == 'debug'
         ['test_orientation', [
             'tests/test_orientation.c',
             'src/options.c',
+        ]],
+        ['test_toolbar', [
+            'tests/test_toolbar.c',
+            'src/toolbar.c',
         ]],
         ['test_strbuf', [
             'tests/test_strbuf.c',

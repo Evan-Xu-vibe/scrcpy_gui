@@ -11,6 +11,7 @@
 #include "controller.h"
 #include "file_pusher.h"
 #include "options.h"
+#include "toolbar.h"
 #include "trait/gamepad_processor.h"
 #include "trait/key_processor.h"
 #include "trait/mouse_processor.h"
@@ -72,5 +73,9 @@ sc_input_manager_init(struct sc_input_manager *im,
 void
 sc_input_manager_handle_event(struct sc_input_manager *im,
                               const SDL_Event *event);
+
+bool
+sc_input_manager_execute_toolbar_action(
+    struct sc_input_manager *im, enum sc_toolbar_action action);
 
 #endif

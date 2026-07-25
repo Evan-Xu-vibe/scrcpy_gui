@@ -111,6 +111,7 @@ enum {
     OPT_RENDER_FIT,
     OPT_IGNORE_VIDEO_ENCODER_CONSTRAINTS,
     OPT_NO_TERMINAL_TITLE,
+    OPT_TOOLBAR,
 };
 
 struct sc_option {
@@ -853,6 +854,11 @@ static const struct sc_option options[] = {
         .shortopt = 'S',
         .longopt = "turn-screen-off",
         .text = "Turn the device screen off immediately.",
+    },
+    {
+        .longopt_id = OPT_TOOLBAR,
+        .longopt = "toolbar",
+        .text = "Show an Android control toolbar beside the mirrored display.",
     },
     {
         .longopt_id = OPT_SCREEN_OFF_TIMEOUT,
@@ -2945,6 +2951,9 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
             case OPT_NO_TERMINAL_TITLE:
                 opts->update_terminal_title = false;
                 break;
+            case OPT_TOOLBAR:
+                opts->toolbar = true;
+                break;
             default:
                 // getopt prints the error message on stderr
                 return false;
@@ -2987,6 +2996,21 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
         opts->video_playback = false;
         // Controls are still possible, allowing for options like
         // --turn-screen-off
+    }
+
+    if (opts->toolbar && !opts->window) {
+        LOGE("--toolbar requires a window");
+        return false;
+    }
+
+    if (opts->toolbar && !opts->control) {
+        LOGE("--toolbar requires control");
+        return false;
+    }
+
+    if (opts->toolbar && opts->video_source == SC_VIDEO_SOURCE_CAMERA) {
+        LOGE("--toolbar is only available for display mirroring");
+        return false;
     }
 
     if (!opts->video) {
