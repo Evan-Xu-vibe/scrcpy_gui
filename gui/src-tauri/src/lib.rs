@@ -1,19 +1,13 @@
-mod updater;
-
 use serde::{Deserialize, Serialize};
 use std::{
     env,
     fs::{self, File},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex,
-    },
+    sync::Mutex,
     thread,
     time::Duration,
 };
-use tauri::AppHandle;
 
 struct ScrcpyProcess {
     child: Child,
@@ -24,7 +18,6 @@ struct ScrcpyProcess {
 #[derive(Default)]
 struct AppState {
     scrcpy: Mutex<Option<ScrcpyProcess>>,
-    updating: AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -73,21 +66,9 @@ struct ScrcpyStatus {
     error: Option<String>,
 }
 
-fn command_path(
-    app: &AppHandle,
-    environment_key: &str,
-    development_path: &str,
-    executable: &str,
-) -> PathBuf {
+fn command_path(environment_key: &str, development_path: &str, executable: &str) -> PathBuf {
     if let Some(path) = env::var_os(environment_key) {
         return PathBuf::from(path);
-    }
-
-    if let Some(directory) = updater::active_engine_dir(app) {
-        let managed = directory.join(executable);
-        if managed.exists() {
-            return managed;
-        }
     }
 
     if let Ok(current_exe) = env::current_exe() {
@@ -107,33 +88,17 @@ fn command_path(
     PathBuf::from(executable)
 }
 
-fn adb_path(app: &AppHandle) -> PathBuf {
-    command_path(
-        app,
-        "SCRCPY_GUI_ADB",
-        "C:/msys64/mingw64/bin/adb.exe",
-        "adb.exe",
-    )
+fn adb_path() -> PathBuf {
+    command_path("SCRCPY_GUI_ADB", "C:/msys64/mingw64/bin/adb.exe", "adb.exe")
 }
 
-fn scrcpy_path(app: &AppHandle) -> PathBuf {
-    command_path(
-        app,
-        "SCRCPY_GUI_SCRCPY",
-        "../../x/app/scrcpy.exe",
-        "scrcpy.exe",
-    )
+fn scrcpy_path() -> PathBuf {
+    command_path("SCRCPY_GUI_SCRCPY", "../../x/app/scrcpy.exe", "scrcpy.exe")
 }
 
-fn server_path(app: &AppHandle) -> Option<PathBuf> {
+fn server_path() -> Option<PathBuf> {
     if let Some(path) = env::var_os("SCRCPY_GUI_SERVER") {
         return Some(PathBuf::from(path));
-    }
-    if let Some(directory) = updater::active_engine_dir(app) {
-        let managed = directory.join("scrcpy-server");
-        if managed.exists() {
-            return Some(managed);
-        }
     }
     if let Ok(executable) = env::current_exe() {
         if let Some(directory) = executable.parent() {
@@ -153,12 +118,12 @@ fn icon_directory() -> Option<PathBuf> {
     development.exists().then_some(development)
 }
 
-fn configure_scrcpy_environment(app: &AppHandle, command: &mut Command) -> Result<(), String> {
-    let adb = adb_path(app);
+fn configure_scrcpy_environment(command: &mut Command) -> Result<(), String> {
+    let adb = adb_path();
     command.env("ADB", &adb);
 
     let mut search_paths = Vec::new();
-    if let Some(directory) = scrcpy_path(app)
+    if let Some(directory) = scrcpy_path()
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
     {
@@ -174,7 +139,7 @@ fn configure_scrcpy_environment(app: &AppHandle, command: &mut Command) -> Resul
         .map_err(|error| format!("无法配置 scrcpy 运行库路径：{error}"))?;
     command.env("PATH", search_path);
 
-    if let Some(server) = server_path(app) {
+    if let Some(server) = server_path() {
         command.env("SCRCPY_SERVER_PATH", server);
     }
     if let Some(icons) = icon_directory() {
@@ -197,8 +162,8 @@ fn exit_message(status: std::process::ExitStatus, log_path: &Path) -> String {
     }
 }
 
-fn run_adb(app: &AppHandle, arguments: &[&str]) -> Result<String, String> {
-    let output = Command::new(adb_path(app))
+fn run_adb(arguments: &[&str]) -> Result<String, String> {
+    let output = Command::new(adb_path())
         .args(arguments)
         .output()
         .map_err(|error| format!("无法启动 ADB：{error}"))?;
@@ -283,8 +248,8 @@ fn wait_for_exit(child: &mut Child, timeout: Duration) -> Result<bool, String> {
     Ok(false)
 }
 
-fn stop_device_server(app: &AppHandle, serial: &str) {
-    let _ = Command::new(adb_path(app))
+fn stop_device_server(serial: &str) {
+    let _ = Command::new(adb_path())
         .args([
             "-s",
             serial,
@@ -299,8 +264,8 @@ fn stop_device_server(app: &AppHandle, serial: &str) {
 }
 
 #[tauri::command]
-fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
-    let output = run_adb(&app, &["devices", "-l"])?;
+fn list_devices() -> Result<Vec<DeviceInfo>, String> {
+    let output = run_adb(&["devices", "-l"])?;
     let mut devices = Vec::new();
 
     for line in output
@@ -319,16 +284,13 @@ fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
             .replace('_', " ");
         let product = attribute(&tokens[2..], "product:").map(ToOwned::to_owned);
         let android_version = if state == "device" {
-            run_adb(
-                &app,
-                &[
-                    "-s",
-                    &serial,
-                    "shell",
-                    "getprop",
-                    "ro.build.version.release",
-                ],
-            )
+            run_adb(&[
+                "-s",
+                &serial,
+                "shell",
+                "getprop",
+                "ro.build.version.release",
+            ])
             .ok()
         } else {
             None
@@ -352,20 +314,16 @@ fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
 }
 
 #[tauri::command]
-fn connect_wireless(app: AppHandle, address: String) -> Result<String, String> {
+fn connect_wireless(address: String) -> Result<String, String> {
     let address = address.trim();
     if address.is_empty() || address.chars().any(char::is_whitespace) {
         return Err("请输入有效的 IP 地址和端口".to_string());
     }
-    run_adb(&app, &["connect", address])
+    run_adb(&["connect", address])
 }
 
 #[tauri::command]
-fn start_scrcpy(
-    app: AppHandle,
-    settings: LaunchSettings,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+fn start_scrcpy(settings: LaunchSettings, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut process = state.scrcpy.lock().map_err(|_| "无法访问投屏进程状态")?;
     if let Some(managed) = process.as_mut() {
         if managed
@@ -405,7 +363,7 @@ fn start_scrcpy(
         return Err("录制文件路径不能为空".to_string());
     }
 
-    let executable = scrcpy_path(&app);
+    let executable = scrcpy_path();
     if executable.components().count() > 1 && !Path::new(&executable).exists() {
         return Err(format!("未找到 scrcpy：{}", executable.display()));
     }
@@ -472,7 +430,7 @@ fn start_scrcpy(
             command.arg("--no-playback");
         }
     }
-    configure_scrcpy_environment(&app, &mut command)?;
+    configure_scrcpy_environment(&mut command)?;
 
     let mut child = command
         .spawn()
@@ -491,12 +449,12 @@ fn start_scrcpy(
 }
 
 #[tauri::command]
-fn stop_scrcpy(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn stop_scrcpy(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut process = state.scrcpy.lock().map_err(|_| "无法访问投屏进程状态")?;
     if let Some(mut managed) = process.take() {
         let window_close_requested = request_window_close(managed.child.id());
         if !window_close_requested || !wait_for_exit(&mut managed.child, Duration::from_secs(1))? {
-            stop_device_server(&app, &managed.serial);
+            stop_device_server(&managed.serial);
         }
         if !wait_for_exit(&mut managed.child, Duration::from_secs(3))? {
             managed
@@ -507,65 +465,6 @@ fn stop_scrcpy(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), 
         }
     }
     Ok(())
-}
-
-fn current_scrcpy_version(app: &AppHandle) -> Option<String> {
-    let executable = scrcpy_path(app);
-    let mut command = Command::new(executable);
-    configure_scrcpy_environment(app, &mut command).ok()?;
-    let output = command.arg("--version").output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("scrcpy "))
-        .and_then(|line| line.split_whitespace().next())
-        .map(ToOwned::to_owned)
-}
-
-fn managed_engine_active(app: &AppHandle) -> bool {
-    if env::var_os("SCRCPY_GUI_SCRCPY").is_some() {
-        return false;
-    }
-    updater::active_engine_dir(app).is_some()
-}
-
-#[tauri::command]
-async fn check_scrcpy_update(app: AppHandle) -> Result<updater::EngineUpdateInfo, String> {
-    updater::check(current_scrcpy_version(&app), managed_engine_active(&app)).await
-}
-
-#[tauri::command]
-async fn install_scrcpy_update(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<updater::EngineUpdateInfo, String> {
-    {
-        let mut process = state.scrcpy.lock().map_err(|_| "无法访问投屏进程状态")?;
-        if let Some(managed) = process.as_mut() {
-            if managed
-                .child
-                .try_wait()
-                .map_err(|error| error.to_string())?
-                .is_none()
-            {
-                return Err("请先停止投屏，再更新 scrcpy 引擎".to_string());
-            }
-            *process = None;
-        }
-    }
-    if state.updating.swap(true, Ordering::SeqCst) {
-        return Err("scrcpy 引擎正在更新".to_string());
-    }
-    let result = updater::install(
-        app.clone(),
-        current_scrcpy_version(&app),
-        managed_engine_active(&app),
-    )
-    .await;
-    state.updating.store(false, Ordering::SeqCst);
-    result
 }
 
 #[tauri::command]
@@ -607,9 +506,7 @@ pub fn run() {
             connect_wireless,
             start_scrcpy,
             stop_scrcpy,
-            scrcpy_status,
-            check_scrcpy_update,
-            install_scrcpy_update
+            scrcpy_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running scrcpy GUI");
