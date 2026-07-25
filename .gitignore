@@ -1,4 +1,6 @@
 build/
+/CMakeFiles/
+/gui/
 /dist/
 /build-*/
 /build_*/

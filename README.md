@@ -20,6 +20,16 @@ installed on the device. It works on _Linux_, _Windows_, and _macOS_.
 
 ![screenshot](assets/screenshot-debian-600.jpg)
 
+## Qt Quick GUI
+
+This fork provides a native Windows Qt Quick GUI in [`qt-gui/`](qt-gui/), which
+replaces the former Tauri/WebView frontend. It manages ADB devices and scrcpy
+processes while the scrcpy client owns the adjacent native control toolbar.
+
+See [`qt-gui/README.md`](qt-gui/README.md) for Qt 6 build, test, and packaging
+commands. The Qt application packages its QML resources, so it does not need a
+local development web server or a WebView runtime in production.
+
 It focuses on:
 
  - **lightness**: native, displays only the device screen
