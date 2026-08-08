@@ -2,10 +2,12 @@
 
 #include <assert.h>
 
-#define SC_TOOLBAR_WIDTH 64.f
-#define SC_TOOLBAR_MARGIN 8.f
-#define SC_TOOLBAR_BUTTON_SIZE 40.f
-#define SC_TOOLBAR_BUTTON_GAP 4.f
+#define SC_TOOLBAR_BUTTON_SIZE 56.f
+#define SC_TOOLBAR_HORIZONTAL_MARGIN 8.f
+#define SC_TOOLBAR_WIDTH (SC_TOOLBAR_BUTTON_SIZE \
+                         + 2.f * SC_TOOLBAR_HORIZONTAL_MARGIN)
+#define SC_TOOLBAR_MARGIN 10.f
+#define SC_TOOLBAR_BUTTON_GAP 6.f
 #define SC_TOOLBAR_ICON_TILE_SIZE 48.f
 
 static const enum sc_toolbar_action toolbar_actions[] = {
@@ -14,9 +16,14 @@ static const enum sc_toolbar_action toolbar_actions[] = {
     SC_TOOLBAR_ACTION_APP_SWITCH,
     SC_TOOLBAR_ACTION_ROTATE_DEVICE,
     SC_TOOLBAR_ACTION_POWER,
-    SC_TOOLBAR_ACTION_VOLUME_DOWN,
     SC_TOOLBAR_ACTION_VOLUME_UP,
+    SC_TOOLBAR_ACTION_VOLUME_DOWN,
     SC_TOOLBAR_ACTION_EXPAND_NOTIFICATIONS,
+};
+
+// The icon atlas keeps the original volume-down/volume-up tile order.
+static const unsigned toolbar_icon_indices[] = {
+    0, 1, 2, 3, 4, 6, 5, 7,
 };
 
 static inline SDL_FRect
@@ -291,7 +298,7 @@ sc_toolbar_render(const struct sc_toolbar *toolbar, SDL_Renderer *renderer,
 
         if (toolbar->icons) {
             SDL_FRect source = {
-                .x = i * SC_TOOLBAR_ICON_TILE_SIZE,
+                .x = toolbar_icon_indices[i] * SC_TOOLBAR_ICON_TILE_SIZE,
                 .y = 0,
                 .w = SC_TOOLBAR_ICON_TILE_SIZE,
                 .h = SC_TOOLBAR_ICON_TILE_SIZE,
