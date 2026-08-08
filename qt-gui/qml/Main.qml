@@ -21,7 +21,6 @@ ApplicationWindow {
     Material.primary: Theme.blue
 
     property string selectedSerial: ""
-    property int toolbarButtonWidth: 108
 
     Component.onCompleted: {
         Theme.dark = Boolean(app.setting("darkTheme"))
@@ -56,32 +55,20 @@ ApplicationWindow {
             }
             Label { text: "scrcpy GUI"; color: Theme.text; font.pixelSize: 16; font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
-            ToolButton {
-                text: "刷新设备"
-                implicitWidth: root.toolbarButtonWidth
-                implicitHeight: 40
-                padding: 0
+            IconToolButton {
+                iconSource: "icons/refresh.svg"
+                tooltipText: "刷新设备"
                 onClicked: app.refreshDevices()
-                contentItem: Label { text: parent.text; color: parent.hovered ? Theme.blue : Theme.muted; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { radius: Theme.radius; color: parent.hovered ? Theme.surfaceSoft : "transparent" }
             }
-            ToolButton {
-                text: "查看日志"
-                implicitWidth: root.toolbarButtonWidth
-                implicitHeight: 40
-                padding: 0
+            IconToolButton {
+                iconSource: "icons/logs.svg"
+                tooltipText: "查看日志"
                 onClicked: logDrawer.open()
-                contentItem: Label { text: parent.text; color: parent.hovered ? Theme.blue : Theme.muted; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { radius: Theme.radius; color: parent.hovered ? Theme.surfaceSoft : "transparent" }
             }
-            ToolButton {
-                text: Theme.dark ? "浅色主题" : "深色主题"
-                implicitWidth: root.toolbarButtonWidth
-                implicitHeight: 40
-                padding: 0
+            IconToolButton {
+                iconSource: Theme.dark ? "icons/sun.svg" : "icons/moon.svg"
+                tooltipText: Theme.dark ? "切换到浅色主题" : "切换到深色主题"
                 onClicked: { Theme.dark = !Theme.dark; app.setSetting("darkTheme", Theme.dark) }
-                contentItem: Label { text: parent.text; color: parent.hovered ? Theme.blue : Theme.muted; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { radius: Theme.radius; color: parent.hovered ? Theme.surfaceSoft : "transparent" }
             }
         }
     }

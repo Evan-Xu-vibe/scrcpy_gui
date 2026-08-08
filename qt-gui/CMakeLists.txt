@@ -19,6 +19,12 @@ qt_add_executable(scrcpy-qt-gui
     src/device_model.h
 )
 
+if (WIN32)
+    set_target_properties(scrcpy-qt-gui PROPERTIES
+        WIN32_EXECUTABLE TRUE
+    )
+endif()
+
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 target_compile_definitions(scrcpy-qt-gui PRIVATE
@@ -32,6 +38,7 @@ qt_add_qml_module(scrcpy-qt-gui
         qml/Theme.qml
         qml/Main.qml
         qml/components/DeviceSidebar.qml
+        qml/components/IconToolButton.qml
         qml/components/SettingRow.qml
         qml/components/ToggleRow.qml
         qml/components/LogDrawer.qml
@@ -42,6 +49,11 @@ qt_add_qml_module(scrcpy-qt-gui
         qml/pages/ControlPage.qml
         qml/pages/AudioPage.qml
         qml/pages/RecordingPage.qml
+    RESOURCES
+        qml/icons/refresh.svg
+        qml/icons/logs.svg
+        qml/icons/moon.svg
+        qml/icons/sun.svg
 )
 
 target_link_libraries(scrcpy-qt-gui
