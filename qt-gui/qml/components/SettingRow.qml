@@ -1,27 +1,30 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import ScrcpyGui
 
 RowLayout {
     id: root
     property string title: ""
     property string description: ""
     default property alias control: controlSlot.data
-    spacing: 28
+    spacing: 32
     implicitHeight: 78
 
     ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredWidth: 2
         spacing: 5
-        Label { text: root.title; font.weight: Font.DemiBold; color: palette.text }
-        Label { text: root.description; color: palette.mid; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+        Label { text: root.title; color: Theme.text; font.weight: Font.DemiBold; font.pixelSize: 14 }
+        Label { text: root.description; color: Theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
     }
     Item {
         id: controlSlot
-        Layout.preferredWidth: 360
-        Layout.maximumWidth: 420
-        Layout.fillWidth: true
+        Layout.minimumWidth: 300
+        Layout.preferredWidth: Math.min(440, Math.max(300, root.width * 0.52))
+        Layout.maximumWidth: Math.min(440, Math.max(300, root.width * 0.52))
+        Layout.fillWidth: false
+        Layout.alignment: Qt.AlignRight
         implicitHeight: childrenRect.height
     }
 }

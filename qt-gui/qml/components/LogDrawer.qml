@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import ScrcpyGui
 
 Drawer {
     id: root
@@ -8,17 +9,21 @@ Drawer {
     width: Math.min(520, parent.width * .48)
     height: parent.height
     modal: true
-    padding: 18
+    padding: 0
+    background: Rectangle { color: Theme.surface; border.color: Theme.border }
 
     ColumnLayout {
         anchors.fill: parent
+        anchors.margins: 18
+        spacing: 14
         RowLayout {
-            Label { text: "运行日志"; font.pixelSize: 18; font.weight: Font.DemiBold }
+            Layout.fillWidth: true
+            Label { text: "运行日志"; color: Theme.text; font.pixelSize: 18; font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
             ToolButton { text: "清除"; onClicked: app.clearLogs() }
             ToolButton { text: "关闭"; onClicked: root.close() }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: palette.midlight }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -28,7 +33,7 @@ Drawer {
                 required property string modelData
                 width: ListView.view.width
                 text: modelData
-                color: palette.text
+                color: Theme.text
                 font.family: "Consolas"
                 font.pixelSize: 12
                 wrapMode: Text.WrapAnywhere

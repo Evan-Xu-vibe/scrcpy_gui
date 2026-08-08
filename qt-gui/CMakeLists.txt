@@ -19,6 +19,8 @@ qt_add_executable(scrcpy-qt-gui
     src/device_model.h
 )
 
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 target_compile_definitions(scrcpy-qt-gui PRIVATE
     SCRCPY_GUI_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
@@ -27,11 +29,15 @@ qt_add_qml_module(scrcpy-qt-gui
     URI ScrcpyGui
     VERSION 1.0
     QML_FILES
+        qml/Theme.qml
         qml/Main.qml
         qml/components/DeviceSidebar.qml
         qml/components/SettingRow.qml
         qml/components/ToggleRow.qml
         qml/components/LogDrawer.qml
+        qml/components/PrimaryButton.qml
+        qml/components/Divider.qml
+        qml/components/SelectBox.qml
         qml/pages/DisplayPage.qml
         qml/pages/ControlPage.qml
         qml/pages/AudioPage.qml

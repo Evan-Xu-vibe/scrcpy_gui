@@ -1,63 +1,93 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import ScrcpyGui
 
 Rectangle {
     id: root
     property string selectedSerial: ""
     signal selectDevice(string serial)
     signal requestWireless()
-    color: palette.window
-    border.color: palette.midlight
+    color: Theme.surface
+    border.color: Theme.border
     border.width: 1
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 14
+        anchors.topMargin: 24
+        anchors.bottomMargin: 14
+        anchors.leftMargin: 14
+        anchors.rightMargin: 14
         spacing: 12
+
         RowLayout {
-            Label { text: "设备"; font.pixelSize: 19; font.weight: Font.DemiBold; color: palette.text }
-            Rectangle { width: 24; height: 24; radius: 12; color: "#f1f3f6"; Label { anchors.centerIn: parent; text: app.devices.count; color: "#6d7480"; font.pixelSize: 12 } }
+            Layout.fillWidth: true
+            Layout.leftMargin: 10
+            Layout.rightMargin: 10
+            Label { text: "设备"; font.pixelSize: 19; font.weight: Font.DemiBold; color: Theme.text }
+            Rectangle {
+                width: 24; height: 24; radius: 12; color: Theme.surfaceSoft
+                Label { anchors.centerIn: parent; text: app.devices.count; color: Theme.muted; font.pixelSize: 12; font.weight: Font.DemiBold }
+            }
             Item { Layout.fillWidth: true }
         }
+
         ListView {
             id: deviceList
             Layout.fillWidth: true
             Layout.fillHeight: true
             model: app.devices
-            spacing: 6
+            spacing: 4
             clip: true
             delegate: Rectangle {
+                id: delegateRoot
+                required property string serial
+                required property string state
+                required property string modelName
+                required property string connection
                 width: ListView.view.width
-                height: 72
-                radius: 7
-                color: serial === root.selectedSerial ? "#eaf3ff" : "transparent"
-                border.color: serial === root.selectedSerial ? "#91baeF" : "transparent"
+                height: 68
+                radius: Theme.radius
+                property bool selected: serial === root.selectedSerial
+                property bool hovered: mouseArea.containsMouse
+                color: selected ? Theme.blueSoft : (hovered ? Theme.surfaceSoft : "transparent")
+                border.color: selected ? Theme.blue : "transparent"
+
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: 10
                     spacing: 10
-                    Rectangle { width: 9; height: 9; radius: 5; color: state === "device" ? "#139b55" : "#e0a21a" }
+                    Rectangle { width: 8; height: 8; radius: 4; color: delegateRoot.state === "device" ? Theme.green : Theme.warning }
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 2
-                        Label { text: modelName || serial; elide: Label.ElideRight; Layout.fillWidth: true; font.weight: Font.DemiBold; color: "#20242b" }
-                        Label { text: connection === "wireless" ? "无线" : (state === "device" ? "已连接" : state); color: "#6d7480"; font.pixelSize: 12 }
+                        spacing: 3
+                        Label { text: delegateRoot.modelName || delegateRoot.serial; elide: Label.ElideRight; Layout.fillWidth: true; font.weight: Font.DemiBold; color: Theme.text; font.pixelSize: 13 }
+                        Label { text: delegateRoot.connection === "wireless" ? "无线连接" : (delegateRoot.state === "device" ? "已连接" : delegateRoot.state); color: Theme.muted; font.pixelSize: 12 }
                     }
                 }
-                MouseArea { anchors.fill: parent; onClicked: root.selectDevice(serial) }
+                MouseArea { id: mouseArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDevice(delegateRoot.serial) }
             }
             footer: Item {
                 width: deviceList.width
-                height: app.devices.rowCount() ? 0 : 120
+                height: app.devices.count ? 0 : 132
                 Column {
                     anchors.centerIn: parent
-                    spacing: 8
-                    Label { anchors.horizontalCenter: parent.horizontalCenter; text: "未发现设备"; font.weight: Font.DemiBold; color: palette.text }
-                    Label { text: "连接手机并开启 USB 调试"; color: palette.mid; font.pixelSize: 12 }
+                    spacing: 9
+                    Label { anchors.horizontalCenter: parent.horizontalCenter; text: "未发现设备"; font.weight: Font.DemiBold; color: Theme.text }
+                    Label { text: "连接手机并开启 USB 调试"; color: Theme.muted; font.pixelSize: 12 }
                 }
             }
+            ScrollBar.vertical: ScrollBar { }
         }
-        Button { text: "无线连接"; Layout.fillWidth: true; onClicked: root.requestWireless() }
+
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
+        Button {
+            text: "无线连接"
+            Layout.fillWidth: true
+            implicitHeight: 42
+            onClicked: root.requestWireless()
+            contentItem: Label { text: parent.text; color: Theme.text; font: parent.font; horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter; leftPadding: 10 }
+            background: Rectangle { color: parent.hovered ? Theme.surfaceSoft : "transparent"; radius: Theme.radius }
+        }
     }
 }
